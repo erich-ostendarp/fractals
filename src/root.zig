@@ -142,7 +142,29 @@ fn iterate(comptime iters: usize) @Vector(1 << iters, u2) {
 }
 
 pub fn main(init: std.process.Init) !void {
-    std.debug.print("{}\n", .{iterate(3)});
+    const vec_len = 996;
+    var vec: @Vector(vec_len, u4) = @splat(0);
+    vec[0] = 1;
+
+    inline for (0..std.math.log2(vec_len)) |i| {
+        const len = @as(u32, 1) << @as(std.math.Log2Int(u32), @intCast(i));
+
+        const twos: @Vector(len, u4) = @splat(2);
+        const fives: @Vector(len, u4) = @splat(5);
+
+        const extract = std.simd.extract(vec, 0, len);
+
+        const next = std.simd.reverseOrder((extract * twos) % fives);
+
+        const res = std.simd.join(next, extract);
+
+        std.debug.print("{} {}\n", .{ vec_len, len });
+        const zeros: @Vector(vec_len - 2 * len, u4) = @splat(0);
+
+        vec = std.simd.join(res, zeros);
+
+        std.debug.print("{}\n", .{res});
+    }
 
     if (true) return;
     var dragon = DragonGenerator{};
