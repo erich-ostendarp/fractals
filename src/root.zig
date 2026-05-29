@@ -141,8 +141,8 @@ fn iterate(comptime iters: usize) @Vector(1 << iters, u2) {
     return std.simd.join(next, half);
 }
 
-pub fn main(init: std.process.Init) !void {
-    const vec_len = 996;
+fn beegVector() void {
+    const vec_len = 995;
     var vec: @Vector(vec_len, u4) = @splat(0);
     vec[0] = 1;
 
@@ -165,8 +165,90 @@ pub fn main(init: std.process.Init) !void {
 
         std.debug.print("{}\n", .{res});
     }
+}
+
+const DragonVecBatch = struct {
+    const vec_len = 64;
+    const VecType = @Vector(vec_len, u4);
+    batches: std.ArrayList(VecType),
+
+    const Direction = enum(u4) {
+        empty,
+        up,
+        right,
+        left,
+        down,
+    };
+
+    pub fn init(gpa: std.mem.Allocator) !DragonVecBatch {
+        var vec: VecType = @splat(0);
+        vec[0] = @intFromEnum(Direction.up);
+
+        var ret = DragonVecBatch{ .batches = .empty };
+        try ret.batches.append(gpa, vec);
+
+        return ret;
+    }
+
+    pub fn deinit(self: *DragonVecBatch, gpa: std.mem.Allocator) void {
+        self.batches.deinit(gpa);
+    }
+
+    pub fn a(vec: *VecType, comptime len: u8) ?VecType {
+        const extract = std.simd.extract(vec.*, 0, len);
+
+        const twos: @Vector(len, u4) = @splat(2);
+        const fives: @Vector(len, u4) = @splat(5);
+
+        const res = std.simd.reverseOrder((extract * twos) % fives);
+
+        if (len == vec_len) return res;
+
+        const next = std.simd.join(res, extract);
+        const zeros: @Vector(vec_len - 2 * len, u4) = @splat(0);
+        vec.* = std.simd.join(next, zeros);
+
+        return null;
+    }
+
+    pub fn genNext(self: *DragonVecBatch, gpa: std.mem.Allocator) !void {
+        const batches = self.batches.items;
+        if (batches.len == 1) {
+            const len: usize = std.simd.firstIndexOfValue(batches[0], @intFromEnum(Direction.empty)) orelse vec_len;
+            const out = switch (len) {
+                inline 1, 2, 4, 8, 16, 32, 64 => |l| a(&batches[0], l),
+                else => unreachable,
+            };
+
+            if (out) |o| try self.batches.append(gpa, o);
+        }
+    }
+
+    pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        for (self.batches.items) |b| {
+            const arr: [vec_len]u4 = b;
+            for (arr) |i| {
+                if (i == @intFromEnum(Direction.empty)) break;
+                const ev: Direction = @enumFromInt(i);
+                try writer.print("{t}, ", .{ev});
+            }
+            try writer.print("|", .{});
+        }
+    }
+};
+
+pub fn main(init: std.process.Init) !void {
+    var dvb = try DragonVecBatch.init(init.gpa);
+    defer dvb.deinit(init.gpa);
+
+    std.debug.print("{} - {f}\n", .{ dvb.batches.items.len, dvb });
+    for (0..7) |_| {
+        try dvb.genNext(init.gpa);
+        std.debug.print("{} - {f}\n", .{ dvb.batches.items.len, dvb });
+    }
 
     if (true) return;
+
     var dragon = DragonGenerator{};
     defer dragon.deinit(init.gpa);
 
