@@ -119,16 +119,22 @@ pub fn hsv2rgb(hsv: HSV) RGB {
 }
 
 const DragonVecBatch = struct {
-    const vec_len = 64;
-    const VecType = @Vector(vec_len, u4);
     batches: std.ArrayList(VecType),
 
-    const Direction = enum(u4) {
+    const vec_len = 64;
+    const ElemType = @Int(Direction.tag_type_int.signedness, Direction.tag_type_int.bits + 1);
+    const VecType = @Vector(vec_len, ElemType);
+    const ArrType = [vec_len]ElemType;
+
+    const Direction = enum {
         empty,
         up,
         right,
         left,
         down,
+
+        const TagType = @typeInfo(Direction).@"enum".tag_type;
+        const tag_type_int = @typeInfo(TagType).int;
     };
 
     pub fn init(gpa: std.mem.Allocator) !DragonVecBatch {
@@ -159,7 +165,7 @@ const DragonVecBatch = struct {
         const curr = std.simd.extract(vec, 0, l);
         const next = std.simd.join(dragonFn(curr), curr);
 
-        const padding: @Vector(vec_len - 2 * l, u4) = @splat(0);
+        const padding: @Vector(vec_len - 2 * l, ElemType) = @splat(0);
         return std.simd.join(next, padding);
     }
 
@@ -186,7 +192,7 @@ const DragonVecBatch = struct {
 
     pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
         for (self.batches.items) |b| {
-            const arr: [vec_len]u4 = b;
+            const arr: ArrType = b;
             for (arr) |i| {
                 if (i == @intFromEnum(Direction.empty)) break;
                 const ev: Direction = @enumFromInt(i);
@@ -219,7 +225,7 @@ pub fn main(init: std.process.Init) !void {
     points[0] = .{ .x = 0, .y = 0 };
 
     for (batches, 0..) |b, i| {
-        const arr: [vec_len]u4 = b;
+        const arr: DragonVecBatch.ArrType = b;
 
         const start = i * vec_len;
         const end = (i + 1) * vec_len;
@@ -250,15 +256,15 @@ pub fn main(init: std.process.Init) !void {
         p.y = (p.y - min.y) / (max.y - min.y);
     }
 
-    const window_width = 800;
-    const window_height = 800;
+    const window_width = 1000;
+    const window_height = 1000;
 
     _ = c.glfwSetErrorCallback(errorCallback);
 
     if (c.glfwInit() != 1) return error.glfwInit;
     defer c.glfwTerminate();
 
-    const window = c.glfwCreateWindow(window_width, window_height, "Hello, World!", null, null) orelse return error.glfwCreateWindow;
+    const window = c.glfwCreateWindow(window_width, window_height, "Dragon Fractal", null, null) orelse return error.glfwCreateWindow;
     c.glfwMakeContextCurrent(window);
 
     c.glClearColor(0, 0, 0, 1);
