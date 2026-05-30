@@ -194,33 +194,42 @@ const DragonVecBatch = struct {
         self.batches.deinit(gpa);
     }
 
-    pub fn a(vec: *VecType, comptime len: u8) ?VecType {
-        const extract = std.simd.extract(vec.*, 0, len);
+    const Len = enum(u8) {
+        @"1" = 1,
+        @"2" = 2,
+        @"4" = 4,
+        @"8" = 8,
+        @"16" = 16,
+        @"32" = 32,
+    };
 
-        const twos: @Vector(len, u4) = @splat(2);
-        const fives: @Vector(len, u4) = @splat(5);
+    pub fn a(vec: VecType, comptime len: Len) VecType {
+        const l = @intFromEnum(len);
+        const curr = std.simd.extract(vec, 0, l);
+        const next = std.simd.join(dragonFn(curr), curr);
 
-        const res = std.simd.reverseOrder((extract * twos) % fives);
+        const padding: @Vector(vec_len - 2 * l, u4) = @splat(0);
+        return std.simd.join(next, padding);
+    }
 
-        if (len == vec_len) return res;
-
-        const next = std.simd.join(res, extract);
-        const zeros: @Vector(vec_len - 2 * len, u4) = @splat(0);
-        vec.* = std.simd.join(next, zeros);
-
-        return null;
+    fn dragonFn(vec: anytype) @TypeOf(vec) {
+        const twos: @TypeOf(vec) = @splat(2);
+        const fives: @TypeOf(vec) = @splat(5);
+        return std.simd.reverseOrder((vec * twos) % fives);
     }
 
     pub fn genNext(self: *DragonVecBatch, gpa: std.mem.Allocator) !void {
-        const batches = self.batches.items;
-        if (batches.len == 1) {
-            const len: usize = std.simd.firstIndexOfValue(batches[0], @intFromEnum(Direction.empty)) orelse vec_len;
-            const out = switch (len) {
-                inline 1, 2, 4, 8, 16, 32, 64 => |l| a(&batches[0], l),
-                else => unreachable,
+        if (std.simd.firstIndexOfValue(self.batches.items[0], @intFromEnum(Direction.empty))) |fiov| {
+            const len: Len = @enumFromInt(fiov);
+            self.batches.items[0] = switch (len) {
+                inline else => |l| a(self.batches.items[0], l),
             };
+            return;
+        }
 
-            if (out) |o| try self.batches.append(gpa, o);
+        var new = try self.batches.addManyAt(gpa, 0, self.batches.items.len);
+        for (self.batches.items[new.len..], 0..) |b, i| {
+            new[new.len - 1 - i] = dragonFn(b);
         }
     }
 
@@ -238,35 +247,37 @@ const DragonVecBatch = struct {
 };
 
 pub fn main(init: std.process.Init) !void {
-    var dvb = try DragonVecBatch.init(init.gpa);
-    defer dvb.deinit(init.gpa);
-
-    std.debug.print("{} - {f}\n", .{ dvb.batches.items.len, dvb });
-    for (0..7) |_| {
-        try dvb.genNext(init.gpa);
-        std.debug.print("{} - {f}\n", .{ dvb.batches.items.len, dvb });
-    }
-
-    if (true) return;
-
-    var dragon = DragonGenerator{};
+    var dragon = try DragonVecBatch.init(init.gpa);
     defer dragon.deinit(init.gpa);
 
-    for (0..20) |_| try dragon.genNext(init.gpa);
+    for (0..16) |_| {
+        try dragon.genNext(init.gpa);
+    }
+
+    const batches = dragon.batches.items;
 
     const Point = struct { x: f64, y: f64 };
-    var points = try init.gpa.alloc(Point, dragon.path.items.len + 1);
+    const vec_len = DragonVecBatch.vec_len;
+    var points = try init.gpa.alloc(Point, batches.len * vec_len + 1);
     defer init.gpa.free(points);
 
     points[0] = .{ .x = 0, .y = 0 };
 
-    for (points[1..], points[0 .. points.len - 1], dragon.path.items) |*curr, prev, dir| {
-        curr.* = prev;
-        switch (dir) {
-            .up => curr.y += 1,
-            .right => curr.x += 1,
-            .down => curr.y -= 1,
-            .left => curr.x -= 1,
+    for (batches, 0..) |b, i| {
+        const arr: [vec_len]u4 = b;
+
+        const start = i * vec_len;
+        const end = (i + 1) * vec_len;
+        for (points[start + 1 .. end + 1], points[start..end], arr) |*curr, prev, dir| {
+            const d: DragonVecBatch.Direction = @enumFromInt(dir);
+            curr.* = prev;
+            switch (d) {
+                .up => curr.y += 1,
+                .right => curr.x += 1,
+                .down => curr.y -= 1,
+                .left => curr.x -= 1,
+                else => {},
+            }
         }
     }
 
