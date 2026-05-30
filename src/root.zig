@@ -14,12 +14,9 @@ const DragonGenerator = struct {
             return;
         }
 
-        var new = try alloc.alloc(Direction, self.path.items.len);
-        defer alloc.free(new);
-
-        for (new[0..], 0..) |*n, i| n.* = self.path.items[new.len - i - 1].rotCW90().invert();
-
-        try self.path.insertSlice(alloc, 0, new);
+        var new = try self.path.addManyAt(alloc, 0, self.path.items.len);
+        const old = self.path.items[new.len..];
+        for (new[0..], 0..) |*n, i| n.* = old[new.len - i - 1].rotCW90().invert();
     }
 
     pub fn format(self: DragonGenerator, writer: *std.Io.Writer) std.Io.Writer.Error!void {
@@ -63,21 +60,9 @@ const DragonGenerator = struct {
     };
 };
 
-fn errorCallback(a: c_int, b: [*c]const u8) callconv(.c) void {
-    std.debug.print("{} {s}\n", .{ a, b });
-}
+const HSV = struct { h: f32, s: f32, v: f32 };
+const RGB = struct { r: f32, g: f32, b: f32 };
 
-const HSV = struct {
-    h: f32,
-    s: f32,
-    v: f32,
-};
-
-const RGB = struct {
-    r: f32,
-    g: f32,
-    b: f32,
-};
 pub fn rgb2hsv(rgb: RGB) HSV {
     const r = rgb.r;
     const g = rgb.g;
@@ -89,18 +74,20 @@ pub fn rgb2hsv(rgb: RGB) HSV {
 
     const v = cmax;
 
-    const s = if (cmax == 0.0) 0.0 else delta / cmax;
+    const s = if (cmax == 0) 0 else delta / cmax;
 
     const h = blk: {
-        if (delta == 0.0) break :blk 0.0;
-        var raw: f32 = undefined;
-        if (cmax == r)
-            raw = 60.0 * @mod((g - b) / delta, 6.0)
-        else if (cmax == g)
-            raw = 60.0 * ((b - r) / delta + 2.0)
-        else
-            raw = 60.0 * ((r - g) / delta + 4.0);
-        break :blk if (raw < 0.0) raw + 360.0 else raw;
+        if (delta == 0) break :blk 0;
+
+        const raw =
+            if (cmax == r)
+                60 * @mod((g - b) / delta, 6)
+            else if (cmax == g)
+                (b - r) / delta + 2
+            else
+                (r - g) / delta + 4;
+
+        break :blk if (raw < 0) raw + 360 else raw;
     };
 
     return .{ .h = h, .s = s, .v = v };
@@ -111,14 +98,14 @@ pub fn hsv2rgb(hsv: HSV) RGB {
     const s = hsv.s;
     const v = hsv.v;
 
-    if (s == 0.0) return .{ .r = v, .g = v, .b = v };
+    if (s == 0) return .{ .r = v, .g = v, .b = v };
 
-    const sector = h / 60.0;
+    const sector = h / 60;
     const i: u32 = @intFromFloat(sector);
     const f = sector - @as(f32, @floatFromInt(i));
-    const p = v * (1.0 - s);
-    const q = v * (1.0 - s * f);
-    const t = v * (1.0 - s * (1.0 - f));
+    const p = v * (1 - s);
+    const q = v * (1 - s * f);
+    const t = v * (1 - s * (1 - f));
 
     return switch (i % 6) {
         0 => .{ .r = v, .g = t, .b = p },
@@ -129,42 +116,6 @@ pub fn hsv2rgb(hsv: HSV) RGB {
         5 => .{ .r = v, .g = p, .b = q },
         else => unreachable,
     };
-}
-
-fn iterate(comptime iters: usize) @Vector(1 << iters, u2) {
-    if (iters == 0) return @Vector(1, u2){0};
-
-    const half = iterate(iters - 1);
-    const threes: @Vector(1 << (iters - 1), u2) = @splat(3);
-    const next = half +% threes;
-
-    return std.simd.join(next, half);
-}
-
-fn beegVector() void {
-    const vec_len = 995;
-    var vec: @Vector(vec_len, u4) = @splat(0);
-    vec[0] = 1;
-
-    inline for (0..std.math.log2(vec_len)) |i| {
-        const len = @as(u32, 1) << @as(std.math.Log2Int(u32), @intCast(i));
-
-        const twos: @Vector(len, u4) = @splat(2);
-        const fives: @Vector(len, u4) = @splat(5);
-
-        const extract = std.simd.extract(vec, 0, len);
-
-        const next = std.simd.reverseOrder((extract * twos) % fives);
-
-        const res = std.simd.join(next, extract);
-
-        std.debug.print("{} {}\n", .{ vec_len, len });
-        const zeros: @Vector(vec_len - 2 * len, u4) = @splat(0);
-
-        vec = std.simd.join(res, zeros);
-
-        std.debug.print("{}\n", .{res});
-    }
 }
 
 const DragonVecBatch = struct {
@@ -246,6 +197,10 @@ const DragonVecBatch = struct {
     }
 };
 
+fn errorCallback(a: c_int, b: [*c]const u8) callconv(.c) void {
+    std.debug.print("{} {s}\n", .{ a, b });
+}
+
 pub fn main(init: std.process.Init) !void {
     var dragon = try DragonVecBatch.init(init.gpa);
     defer dragon.deinit(init.gpa);
@@ -295,8 +250,8 @@ pub fn main(init: std.process.Init) !void {
         p.y = (p.y - min.y) / (max.y - min.y);
     }
 
-    const window_width = 1000;
-    const window_height = 1000;
+    const window_width = 800;
+    const window_height = 800;
 
     _ = c.glfwSetErrorCallback(errorCallback);
 
