@@ -83,9 +83,9 @@ pub fn rgb2hsv(rgb: RGB) HSV {
             if (cmax == r)
                 60 * @mod((g - b) / delta, 6)
             else if (cmax == g)
-                (b - r) / delta + 2
+                60 * (b - r) / delta + 2
             else
-                (r - g) / delta + 4;
+                60 * (r - g) / delta + 4;
 
         break :blk if (raw < 0) raw + 360 else raw;
     };
