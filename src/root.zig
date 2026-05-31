@@ -121,7 +121,7 @@ pub fn hsv2rgb(hsv: HSV) RGB {
 const DragonVecBatch = struct {
     batches: std.ArrayList(VecType),
 
-    const vec_len = 64;
+    const vec_len = 512;
     const ElemType = @Int(Direction.tag_type_int.signedness, Direction.tag_type_int.bits + 1);
     const VecType = @Vector(vec_len, ElemType);
     const ArrType = [vec_len]ElemType;
@@ -151,13 +151,17 @@ const DragonVecBatch = struct {
         self.batches.deinit(gpa);
     }
 
-    const Len = enum(u8) {
+    // FIX: this is inefficient representation
+    const Len = enum(u10) {
         @"1" = 1,
         @"2" = 2,
         @"4" = 4,
         @"8" = 8,
         @"16" = 16,
         @"32" = 32,
+        @"64" = 64,
+        @"128" = 128,
+        @"256" = 256,
     };
 
     pub fn a(vec: VecType, comptime len: Len) VecType {
