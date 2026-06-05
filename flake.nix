@@ -1,13 +1,11 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
-    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
   };
 
-  outputs = { self, nixpkgs, nixpkgs-unstable }: let
+  outputs = { self, nixpkgs }: let
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
-    unstable = nixpkgs-unstable.legacyPackages.${system};
   in {
     devShells.${system}.default = pkgs.mkShell {
       shellHook = ''
@@ -15,8 +13,8 @@
       '';
 
       packages = with pkgs; [
-        unstable.zls
-        unstable.zig
+        zls
+        zig
         glfw
         libGL
       ];
